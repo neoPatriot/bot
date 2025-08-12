@@ -13,8 +13,7 @@ import logging
 from keyboards import generate_room_selection, generate_calendar
 from api_utils import fetch_bookings, extract_times
 from booking_utils import fetch_available_slots
-from config import ROOM_NAMES, ADMIN_USER_IDS, ROOM_ADMINS, API_BASE_URL, MAIN_MENU_KEYBOARD, SCHEDULE_MENU_KEYBOARD, \
-    BOOKING_BASE_URL
+from config import ROOM_NAMES, ADMIN_USER_IDS, ROOM_ADMINS, API_BASE_URL, MAIN_MENU_KEYBOARD, SCHEDULE_MENU_KEYBOARD,     BOOKING_BASE_URL
 
 # Инициализация логгера
 logger = logging.getLogger(__name__)
@@ -50,9 +49,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if text == "просмотр расписания":
         await show_schedule_menu(update, context)
-    elif text == "бронировать":
-        # Начинаем процесс бронирования
-        await show_booking_menu(update, context)
     elif text == "🏢 выберите зал":
         await show_room_selection(update, context, "view")
     elif text == "⬅️ назад в главное меню":
@@ -614,7 +610,8 @@ async def handle_slots_confirm(update: Update, context: ContextTypes.DEFAULT_TYP
 
     # Формируем URL для бронирования
     room_id = context.user_data['booking_room_id']
-    booking_url = f"{BOOKING_BASE_URL}?room={room_id}&date={booking_date}"
+    time_str = ",".join(selected_slots)
+    booking_url = f"{BOOKING_BASE_URL}?room={room_id}&date={booking_date}&time={time_str}"
 
     text = (
         "🎉 Ваше бронирование готово к оформлению!\n\n"
@@ -702,13 +699,10 @@ def setup_handlers(app):
     # Обработчик команды /start
     app.add_handler(CommandHandler("start", start))
 
-    # Обработчик текстовых сообщений
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
     # Сначала регистрируем ConversationHandler для бронирования
     conv_handler = ConversationHandler(
         entry_points=[
-            MessageHandler(filters.Regex(r'^Бронировать$'), show_booking_menu)
+            MessageHandler(filters.Regex(r'(?i)^бронировать$'), show_booking_menu)
         ],
         states={
             BOOKING_ROOM: [
@@ -728,11 +722,14 @@ def setup_handlers(app):
             CommandHandler('cancel', cancel_booking_command),
             MessageHandler(filters.Regex(r'^Отмена$'), cancel_booking_command)
         ],
-        per_message=True,
+        per_message=False,
         per_user=True,
         allow_reentry=True
     )
     app.add_handler(conv_handler)
+
+    # Обработчик текстовых сообщений (после ConversationHandler)
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     # Затем регистрируем глобальный обработчик инлайн-кнопок для просмотра расписания
     app.add_handler(CallbackQueryHandler(handle_callback))
