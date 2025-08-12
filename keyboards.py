@@ -22,6 +22,11 @@ def generate_room_selection(room_names, prefix="select_room_"):
     return InlineKeyboardMarkup(keyboard)
 
 
+RUSSIAN_MONTH_NAMES = [
+    "", "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+    "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"
+]
+
 def generate_calendar(year=None, month=None, selected_room=None, user_id=None,
                       room_names=None, admin_ids=None, room_admins=None, purpose="view"):
     """Генерирует интерактивный календарь с учетом цели (просмотр/бронирование)"""
@@ -32,8 +37,9 @@ def generate_calendar(year=None, month=None, selected_room=None, user_id=None,
     # Проверка прав администратора
     is_admin = user_id in admin_ids or any(user_id in room_admins.get(rid, []) for rid in room_admins)
 
+    month_name = RUSSIAN_MONTH_NAMES[month]
     keyboard = [
-        [InlineKeyboardButton(f"{calendar.month_name[month]} {year}", callback_data="ignore")],
+        [InlineKeyboardButton(f"{month_name} {year}", callback_data="ignore")],
         [InlineKeyboardButton(day, callback_data="ignore") for day in ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]]
     ]
 
