@@ -1,5 +1,4 @@
-from telegram import Update, KeyboardButton, ReplyKeyboardMarkup, CallbackQuery, InlineKeyboardButton, \
-    InlineKeyboardMarkup
+from telegram import Update, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 from telegram.ext import (
     CommandHandler,
     CallbackQueryHandler,
@@ -706,10 +705,7 @@ def setup_handlers(app):
     # Обработчик текстовых сообщений
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # Обработчик инлайн-кнопок для просмотра расписания
-    app.add_handler(CallbackQueryHandler(handle_callback))
-
-    # Обработчики для процесса бронирования (ConversationHandler)
+    # Сначала регистрируем ConversationHandler для бронирования
     conv_handler = ConversationHandler(
         entry_points=[
             MessageHandler(filters.Regex(r'^Бронировать$'), show_booking_menu)
@@ -732,9 +728,11 @@ def setup_handlers(app):
             CommandHandler('cancel', cancel_booking_command),
             MessageHandler(filters.Regex(r'^Отмена$'), cancel_booking_command)
         ],
-        per_message=True,  # Важное исправление
-        per_user=True,  # Отслеживаем состояние по пользователю
+        per_message=True,
+        per_user=True,
         allow_reentry=True
     )
-
     app.add_handler(conv_handler)
+
+    # Затем регистрируем глобальный обработчик инлайн-кнопок для просмотра расписания
+    app.add_handler(CallbackQueryHandler(handle_callback))
