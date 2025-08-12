@@ -694,8 +694,16 @@ async def cancel_booking_callback(update: Update, context: ContextTypes.DEFAULT_
     return ConversationHandler.END
 
 
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Log the error and send a telegram message to notify the developer."""
+    logger.error("Exception while handling an update:", exc_info=context.error)
+
+
 def setup_handlers(app):
     """Регистрация обработчиков"""
+    # Сначала регистрируем обработчик ошибок
+    app.add_error_handler(error_handler)
+
     # Обработчик команды /start
     app.add_handler(CommandHandler("start", start))
 
