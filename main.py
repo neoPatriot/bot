@@ -16,7 +16,7 @@ def main():
         app = Application.builder().token(TOKEN).build()
         setup_handlers(app)
         logger.info("Бот запущен и ожидает сообщений...")
-        app.run_polling()
+        app.run_polling(drop_pending_updates=True)
 
     except Exception as e:
         logger.error(f"Ошибка при запуске: {e}")

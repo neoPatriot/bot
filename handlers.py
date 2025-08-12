@@ -11,9 +11,9 @@ import datetime
 import asyncio
 import logging
 from keyboards import generate_room_selection, generate_calendar
-from api_utils import fetch_bookings, extract_times
+from api_utils import fetch_bookings, extract_times, get_start_time
 from booking_utils import fetch_available_slots
-from config import ROOM_NAMES, ADMIN_USER_IDS, ROOM_ADMINS, API_BASE_URL, MAIN_MENU_KEYBOARD, SCHEDULE_MENU_KEYBOARD,     BOOKING_BASE_URL
+from config import ROOM_NAMES, ADMIN_USER_IDS, ROOM_ADMINS, API_BASE_URL, MAIN_MENU_KEYBOARD, BOOKING_BASE_URL
 
 # Инициализация логгера
 logger = logging.getLogger(__name__)
@@ -48,8 +48,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.lower()
 
     if text == "просмотр расписания":
-        await show_schedule_menu(update, context)
-    elif text == "🏢 выберите зал":
         await show_room_selection(update, context, "view")
     elif text == "⬅️ назад в главное меню":
         await show_main_menu(update, context)
@@ -84,26 +82,6 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Главное меню:",
             reply_markup=ReplyKeyboardMarkup(
                 MAIN_MENU_KEYBOARD,
-                resize_keyboard=True
-            )
-        )
-
-
-async def show_schedule_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показывает меню просмотра расписания"""
-    if isinstance(update, CallbackQuery):
-        await update.edit_message_text(
-            "📅 Меню просмотра расписания:",
-            reply_markup=ReplyKeyboardMarkup(
-                SCHEDULE_MENU_KEYBOARD,
-                resize_keyboard=True
-            )
-        )
-    else:
-        await update.message.reply_text(
-            "📅 Меню просмотра расписания:",
-            reply_markup=ReplyKeyboardMarkup(
-                SCHEDULE_MENU_KEYBOARD,
                 resize_keyboard=True
             )
         )
@@ -414,7 +392,9 @@ async def send_bookings(
 
             await context.bot.send_message(chat_id=chat_id, text=room_header)
 
-            for i, booking in enumerate(room_bookings, 1):
+            sorted_room_bookings = sorted(room_bookings, key=get_start_time)
+
+            for i, booking in enumerate(sorted_room_bookings, 1):
                 try:
                     status = str(booking.get('status', '')).lower()
                     is_cancelled = 'cancel' in status
