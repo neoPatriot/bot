@@ -827,8 +827,7 @@ def setup_handlers(app):
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_get_phone)
             ],
             GET_COMMENT: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_get_comment),
-                CallbackQueryHandler(handle_skip_comment, pattern=r'^skip_comment$')
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_get_comment)
             ],
             CONFIRM_BOOKING: [
                 CallbackQueryHandler(handle_confirmation, pattern=r'^confirm_and_send$'),
@@ -836,6 +835,7 @@ def setup_handlers(app):
             ],
         },
         fallbacks=[
+            CallbackQueryHandler(handle_skip_comment, pattern=r'^skip_comment$'),
             CommandHandler('cancel', cancel_booking_command),
             MessageHandler(filters.Regex(r'^Отмена$'), cancel_booking_command)
         ],
