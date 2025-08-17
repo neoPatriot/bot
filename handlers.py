@@ -10,6 +10,7 @@ from telegram.ext import (
 import datetime
 import asyncio
 import logging
+import re
 from keyboards import generate_room_selection, generate_calendar
 from api_utils import fetch_bookings, extract_times, get_start_time
 from booking_utils import fetch_available_slots, submit_booking
@@ -18,14 +19,25 @@ from config import ROOM_NAMES, ADMIN_USER_IDS, ROOM_ADMINS, API_BASE_URL, MAIN_M
 # Инициализация логгера
 logger = logging.getLogger(__name__)
 
+# Set up a dedicated logger for user actions
+action_logger = logging.getLogger('user_actions')
+action_logger.setLevel(logging.INFO)
+# Create a file handler and set the formatter
+action_file_handler = logging.FileHandler('user_actions.log', encoding='utf-8')
+action_formatter = logging.Formatter('%(asctime)s - %(message)s')
+action_file_handler.setFormatter(action_formatter)
+# Add the handler to the logger
+action_logger.addHandler(action_file_handler)
+action_logger.propagate = False
+
 def log_user_action(update: Update, action: str):
     """Helper function to log an action with user details."""
     user = update.effective_user
     if user:
-        logger.info(f"User {user.id} ({user.full_name} / @{user.username}) - Action: {action}")
+        action_logger.info(f"User {user.id} ({user.full_name} / @{user.username}) - Action: {action}")
     else:
         # Fallback for updates where user might not be present
-        logger.info(f"Unknown user - Action: {action}")
+        action_logger.info(f"Unknown user - Action: {action}")
 
 # Состояния для ConversationHandler (бронирование)
 (
@@ -624,19 +636,28 @@ async def handle_get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Сохраняет номер телефона и запрашивает комментарий."""
+    """Saves the phone number and asks for a comment, with validation."""
     log_user_action(update, "provided phone number")
     phone_number = update.message.text
-    # TODO: Добавить валидацию номера телефона
-    context.user_data['booking_phone'] = phone_number
 
-    text = "Спасибо! Теперь введите комментарий к вашей заявке или нажмите 'Пропустить', если комментариев нет."
-    keyboard = [[InlineKeyboardButton("Пропустить", callback_data="skip_comment")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    # Russian phone number regex
+    phone_regex = r'^(\+7|7|8)?[\s\-]?\(?[489][0-9]{2}\)?[\s\-]?[0-9]{3}[\s\-]?[0-9]{2}[\s\-]?[0-9]{2}$'
 
-    await update.message.reply_text(text, reply_markup=reply_markup)
+    if re.match(phone_regex, phone_number):
+        context.user_data['booking_phone'] = phone_number
 
-    return GET_COMMENT
+        text = "Спасибо! Теперь введите комментарий к вашей заявке или нажмите 'Пропустить', если комментариев нет."
+        keyboard = [[InlineKeyboardButton("Пропустить", callback_data="skip_comment")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await update.message.reply_text(text, reply_markup=reply_markup)
+        return GET_COMMENT
+    else:
+        await update.message.reply_text(
+            "❌ Номер телефона введен некорректно. Пожалуйста, попробуйте еще раз. "
+            "Пример: +79211234567 или 89211234567."
+        )
+        return GET_PHONE
 
 
 async def show_confirmation_summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
