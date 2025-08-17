@@ -47,8 +47,8 @@ def submit_booking(room_id, date_str, selected_slots, user_name, phone_number, c
     Returns a tuple (success: bool, message: str).
     """
     submit_url = BOOKING_BASE_URL
-    time_str = ",".join(selected_slots)
-    final_form_url = f"{BOOKING_BASE_URL}?room={room_id}&date={date_str}&time={time_str}"
+    time_str_for_get = ",".join(selected_slots)
+    final_form_url = f"{BOOKING_BASE_URL}?room={room_id}&date={date_str}&time={time_str_for_get}"
 
     with requests.Session() as session:
         try:
@@ -78,7 +78,7 @@ def submit_booking(room_id, date_str, selected_slots, user_name, phone_number, c
                 '_token': csrf_token,
                 'room_id': room_id,
                 'date': date_str,
-                'time': time_str,
+                'time': selected_slots, # Send as a list of values
                 'name': user_name,
                 'phone': phone_number,
                 'comment': comment,
