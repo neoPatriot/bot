@@ -759,8 +759,10 @@ async def finalize_booking(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Submit the booking
     success, message = submit_booking(
         room_id=context.user_data.get('booking_room_id'),
+        room_name=context.user_data.get('booking_room_name'),
         date_str=context.user_data.get('booking_date'),
         selected_slots=context.user_data.get('selected_slots', []),
+        all_slots=context.user_data.get('booking_slots', []),
         user_name=context.user_data.get('booking_name', 'Не указано'),
         phone_number=context.user_data.get('booking_phone', 'Не указан'),
         comment=final_comment
