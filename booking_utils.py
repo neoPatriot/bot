@@ -1,6 +1,8 @@
 import requests
 from bs4 import BeautifulSoup
 import logging
+import re
+import datetime
 from urllib.parse import urljoin
 from config import BOOKING_BASE_URL
 
@@ -40,7 +42,7 @@ def fetch_available_slots(room_id, date_str):
         return None
 
 
-def submit_booking(room_id, date_str, selected_slots, user_name, phone_number, comment):
+def submit_booking(room_id, room_name, date_str, selected_slots, all_slots, user_name, phone_number, comment):
     """
     Submits the booking to the website by navigating to the final form page
     and then sending a POST request with a CSRF token.
@@ -93,13 +95,51 @@ def submit_booking(room_id, date_str, selected_slots, user_name, phone_number, c
                 headers={'User-Agent': 'TelegramBookingBot/1.0', 'Referer': final_form_url}
             )
 
-            # A successful submission usually redirects
-            if post_response.ok and post_response.url != submit_url:
-                 logger.info(f"Booking submission successful with status {post_response.status_code}.")
-                 return True, "Заявка успешно отправлена!"
-            elif post_response.ok and "успешно" in post_response.text.lower():
-                 logger.info(f"Booking submission successful with status {post_response.status_code}.")
-                 return True, "Заявка успешно отправлена!"
+            # A successful submission contains the phrase "Благодарим за Ваш выбор"
+            if post_response.ok and "Благодарим за Ваш выбор" in post_response.text:
+                logger.info(f"Booking submission successful with status {post_response.status_code}.")
+
+                # --- Construct the detailed success message ---
+
+                # 1. Format date with Russian names
+                try:
+                    date_obj = datetime.datetime.strptime(date_str, '%Y-%m-%d')
+                    # Define Russian locale names
+                    days = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
+                    months = ["", "Января", "Февраля", "Марта", "Апреля", "Мая", "Июня", "Июля", "Августа", "Сентября", "Октября", "Ноября", "Декабря"]
+                    day_of_week = days[date_obj.weekday()]
+                    month_name = months[date_obj.month]
+                    formatted_date = f"{day_of_week}, {date_obj.day}, {month_name}, {date_obj.year}"
+                except (ValueError, TypeError):
+                    formatted_date = date_str # Fallback
+
+                # 2. Find selected slots' labels and calculate total price
+                total_price = 0
+                selected_labels = []
+                for slot_value in selected_slots:
+                    for value, label in all_slots:
+                        if value == slot_value:
+                            selected_labels.append(label)
+                            price_match = re.search(r'\(₽(\d+)\)', label)
+                            if price_match:
+                                total_price += int(price_match.group(1))
+                            break
+
+                intervals_text = "\n".join(selected_labels)
+
+                # 3. Construct the final message
+                success_message = (
+                    f"Уважаемый {user_name}!\n"
+                    f"Ваша заявка на {formatted_date}\n"
+                    f"Интервалы: {intervals_text}\n"
+                    f"Общей стоимостью: ₽ {total_price}\n"
+                    f"Зал: {room_name}.\n\n"
+                    "ВНИМАНИЕ! При бронировании менее чем за СУТКИ, обязательно свяжитесь с АДМИНИСТРАЦИЕЙ "
+                    "по телефону +7-8142-63-53-93 или +7-911-400-53-63 для подтверждения свободного ВРЕМЕНИ! "
+                    "При ОТМЕНЕ менее, чем за ДВОЕ суток - неустойка (50% от полной суммы бронирования)!"
+                )
+
+                return True, success_message
             else:
                 logger.error(f"Booking submission failed. Status: {post_response.status_code}, URL: {post_response.url}, Response: {post_response.text[:300]}")
                 return False, f"Ошибка при отправке заявки. Сервер ответил со статусом: {post_response.status_code}."
