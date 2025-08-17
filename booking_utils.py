@@ -76,12 +76,13 @@ def submit_booking(room_id, date_str, selected_slots, user_name, phone_number, c
             # Step 2: POST request to submit the booking
             payload = {
                 '_token': csrf_token,
-                'room_id': room_id,
+                'room': room_id,
                 'date': date_str,
-                'time': selected_slots, # Send as a list of values
+                'time': time_str_for_get,
                 'name': user_name,
                 'phone': phone_number,
                 'comment': comment,
+                'rules': 'on', # This was the missing required field
                 'submit': '',
             }
 
