@@ -12,7 +12,7 @@ import asyncio
 import logging
 from keyboards import generate_room_selection, generate_calendar
 from api_utils import fetch_bookings, extract_times, get_start_time
-from booking_utils import fetch_available_slots
+from booking_utils import fetch_available_slots, submit_booking
 from config import ROOM_NAMES, ADMIN_USER_IDS, ROOM_ADMINS, API_BASE_URL, MAIN_MENU_KEYBOARD, BOOKING_BASE_URL
 
 # Инициализация логгера
@@ -630,47 +630,31 @@ def clear_booking_data(context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop(key, None)
 
 async def finalize_booking(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Formats and sends the booking summary, then cleans up."""
-    # Extract data from context
-    room_name = context.user_data.get('booking_room_name', 'Не указан')
-    booking_date = context.user_data.get('booking_date', 'Не указана')
-    selected_slots = context.user_data.get('selected_slots', [])
-    user_name = context.user_data.get('booking_name', 'Не указано')
-    phone_number = context.user_data.get('booking_phone', 'Не указан')
-    comment = context.user_data.get('booking_comment', 'Нет')
+    """Calls the submission function and informs the user of the result."""
+    chat_id = update.effective_chat.id
 
-    # Format the date
-    try:
-        date_obj = datetime.datetime.strptime(booking_date, '%Y-%m-%d')
-        formatted_date = date_obj.strftime('%d.%m.%Y')
-    except (ValueError, TypeError):
-        formatted_date = booking_date
+    # Show a "submitting" message
+    submitting_text = "✅ Заявка собрана! Отправляю на сайт..."
+    if isinstance(update, CallbackQuery):
+        await update.edit_message_text(text=submitting_text)
+    else:
+        await update.message.reply_text(text=submitting_text)
 
-    # Format the slots
-    slots_labels = [label for value, label in context.user_data.get('booking_slots', []) if value in selected_slots]
-    slots_text = "\n".join(f"• {label}" for label in slots_labels)
-    if not slots_text:
-        slots_text = "Слоты не выбраны"
-
-    summary_text = (
-        "✅ *Ваша заявка принята!*\n\n"
-        "Мы скоро свяжемся с вами для подтверждения.\n\n"
-        "--- *Детали заявки* ---\n"
-        f"👤 *Имя:* {user_name}\n"
-        f"📞 *Телефон:* {phone_number}\n"
-        f"🏢 *Зал:* {room_name}\n"
-        f"📅 *Дата:* {formatted_date}\n"
-        f"🕒 *Слоты:*\n{slots_text}\n"
-        f"💬 *Комментарий:* {comment}\n"
-        "--------------------------"
+    # Submit the booking
+    success, message = submit_booking(
+        room_id=context.user_data.get('booking_room_id'),
+        date_str=context.user_data.get('booking_date'),
+        selected_slots=context.user_data.get('selected_slots', []),
+        user_name=context.user_data.get('booking_name', 'Не указано'),
+        phone_number=context.user_data.get('booking_phone', 'Не указан'),
+        comment=context.user_data.get('booking_comment', 'Нет')
     )
 
-    # If the last interaction was a button press, we should edit that message
-    if isinstance(update, CallbackQuery):
-        await update.edit_message_text(summary_text, parse_mode="Markdown")
-    else: # if it was a text message, we reply
-        await update.message.reply_text(summary_text, parse_mode="Markdown")
+    # Send the final status as a new message
+    final_message = f"✅ {message}" if success else f"❌ {message}"
+    await context.bot.send_message(chat_id=chat_id, text=final_message)
 
+    # Clean up and end
     clear_booking_data(context)
     return ConversationHandler.END
 

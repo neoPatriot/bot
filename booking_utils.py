@@ -37,3 +37,66 @@ def fetch_available_slots(room_id, date_str):
     except Exception as e:
         logger.error(f"Ошибка при получении слотов: {e}")
         return None
+
+
+def submit_booking(room_id, date_str, selected_slots, user_name, phone_number, comment):
+    """
+    Submits the booking to the website by handling CSRF tokens.
+    Returns a tuple (success: bool, message: str).
+    """
+    # The page with the form is the same as the one for fetching slots
+    form_page_url = f"{BOOKING_BASE_URL}?room={room_id}&date={date_str}"
+    submit_url = BOOKING_BASE_URL  # The form posts to the same base URL
+
+    with requests.Session() as session:
+        try:
+            # 1. GET request to get the CSRF token and session cookie
+            logger.info(f"Fetching booking page to get CSRF token: {form_page_url}")
+            get_response = session.get(form_page_url, headers={'User-Agent': 'TelegramBookingBot/1.0'})
+            get_response.raise_for_status()
+
+            soup = BeautifulSoup(get_response.text, 'html.parser')
+            token_input = soup.find('input', {'name': '_token'})
+
+            if not token_input or not token_input.get('value'):
+                logger.error("Could not find CSRF token on the booking page.")
+                return False, "Не удалось получить CSRF-токен для отправки формы."
+
+            csrf_token = token_input.get('value')
+            logger.info(f"Found CSRF token: {csrf_token[:10]}...")
+
+            # 2. POST request to submit the booking
+            payload = {
+                '_token': csrf_token,
+                'room_id': room_id,
+                'date': date_str,
+                'time': selected_slots,  # requests will handle this as multiple 'time' keys
+                'name': user_name,
+                'phone': phone_number,
+                'comment': comment,
+                'submit': '' # Often forms have a submit button with a name
+            }
+            logger.info(f"Submitting booking with payload for room {room_id}")
+
+            post_response = session.post(
+                submit_url,
+                data=payload,
+                headers={'User-Agent': 'TelegramBookingBot/1.0'}
+            )
+
+            # A redirect (302) or a 200 with a success message usually means success
+            if post_response.status_code == 302 or (post_response.status_code == 200 and "успешно" in post_response.text.lower()):
+                 logger.info(f"Booking submission successful with status {post_response.status_code}.")
+                 # We can check the redirect location header if needed
+                 # location = post_response.headers.get('Location')
+                 return True, "Заявка успешно отправлена!"
+            else:
+                logger.error(f"Booking submission failed. Status: {post_response.status_code}, Response: {post_response.text[:300]}")
+                return False, f"Ошибка при отправке заявки. Сервер ответил со статусом: {post_response.status_code}."
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"A network error occurred during booking submission: {e}")
+            return False, f"Произошла сетевая ошибка при отправке заявки."
+        except Exception as e:
+            logger.error(f"An unexpected error occurred in submit_booking: {e}")
+            return False, "Произошла непредвиденная ошибка при отправке бронирования."
