@@ -677,10 +677,9 @@ async def show_confirmation_summary(update: Update, context: ContextTypes.DEFAUL
 
 async def handle_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles the final confirmation button press and calls finalize_booking."""
-    query = update.callback_query
-    await query.answer()
-    # The query object is passed to finalize_booking so it can edit the message
-    return await finalize_booking(query, context)
+    await update.callback_query.answer()
+    # Pass the entire update object to finalize_booking
+    return await finalize_booking(update, context)
 
 
 def clear_booking_data(context: ContextTypes.DEFAULT_TYPE):
@@ -699,9 +698,9 @@ async def finalize_booking(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Show a "submitting" message
     submitting_text = "✅ Заявка собрана! Отправляю на сайт..."
-    if isinstance(update, CallbackQuery):
-        await update.edit_message_text(text=submitting_text)
-    else:
+    if update.callback_query:
+        await update.callback_query.edit_message_text(text=submitting_text)
+    elif update.message:
         await update.message.reply_text(text=submitting_text)
 
     # Prepare comment
