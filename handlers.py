@@ -25,8 +25,9 @@ logger = logging.getLogger(__name__)
     BOOKING_SLOTS,
     GET_NAME,
     GET_PHONE,
-    GET_COMMENT
-) = range(4, 10)
+    GET_COMMENT,
+    CONFIRM_BOOKING
+) = range(4, 11)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -619,6 +620,69 @@ async def handle_get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return GET_COMMENT
 
 
+async def show_confirmation_summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Displays a summary of the booking for final user confirmation."""
+    # Extract data from context
+    room_name = context.user_data.get('booking_room_name', 'Не указан')
+    booking_date = context.user_data.get('booking_date', 'Не указана')
+    selected_slots = context.user_data.get('selected_slots', [])
+    user_name = context.user_data.get('booking_name', 'Не указано')
+    phone_number = context.user_data.get('booking_phone', 'Не указан')
+
+    # Use the comment that was just saved
+    comment = context.user_data.get('booking_comment', '')
+    if comment == "Пропущено":
+        comment = "Нет"
+
+    # Format the date
+    try:
+        date_obj = datetime.datetime.strptime(booking_date, '%Y-%m-%d')
+        formatted_date = date_obj.strftime('%d.%m.%Y')
+    except (ValueError, TypeError):
+        formatted_date = booking_date
+
+    # Format the slots
+    slots_labels = [label for value, label in context.user_data.get('booking_slots', []) if value in selected_slots]
+    slots_text = "\n".join(f"• {label}" for label in slots_labels)
+    if not slots_text:
+        slots_text = "Слоты не выбраны"
+
+    summary_text = (
+        "🔍 *Пожалуйста, проверьте данные вашей заявки:*\n\n"
+        "--- *Детали заявки* ---\n"
+        f"👤 **Имя:** {user_name}\n"
+        f"📞 **Телефон:** {phone_number}\n"
+        f"🏢 **Зал:** {room_name}\n"
+        f"📅 **Дата:** {formatted_date}\n"
+        f"🕒 **Слоты:**\n{slots_text}\n"
+        f"💬 **Комментарий:** {comment}\n"
+        "--------------------------\n\n"
+        "Всё верно?"
+    )
+
+    keyboard = [
+        [InlineKeyboardButton("✅ Подтвердить и отправить", callback_data="confirm_and_send")],
+        [InlineKeyboardButton("❌ Отменить", callback_data="cancel_booking")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    # The update can be a MessageUpdate or a CallbackQueryUpdate from skipping comment
+    if isinstance(update, CallbackQuery):
+        await update.edit_message_text(summary_text, parse_mode="Markdown", reply_markup=reply_markup)
+    else:
+        await update.message.reply_text(summary_text, parse_mode="Markdown", reply_markup=reply_markup)
+
+    return CONFIRM_BOOKING
+
+
+async def handle_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles the final confirmation button press and calls finalize_booking."""
+    query = update.callback_query
+    await query.answer()
+    # The query object is passed to finalize_booking so it can edit the message
+    return await finalize_booking(query, context)
+
+
 def clear_booking_data(context: ContextTypes.DEFAULT_TYPE):
     """Clears all booking-related data from user_data."""
     keys_to_clear = [
@@ -666,17 +730,16 @@ async def finalize_booking(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 async def handle_get_comment(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Saves the comment from text and finalizes the booking."""
+    """Saves the comment from text and shows the confirmation summary."""
     context.user_data['booking_comment'] = update.message.text
-    return await finalize_booking(update, context)
+    return await show_confirmation_summary(update, context)
 
 async def handle_skip_comment(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Saves an empty comment and finalizes the booking."""
+    """Saves an empty comment and shows the confirmation summary."""
     query = update.callback_query
     await query.answer()
     context.user_data['booking_comment'] = "Пропущено"
-    # Pass the query to the finalize function so it can edit the message
-    return await finalize_booking(query, context)
+    return await show_confirmation_summary(query, context)
 
 
 async def handle_retry_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -766,6 +829,10 @@ def setup_handlers(app):
             GET_COMMENT: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_get_comment),
                 CallbackQueryHandler(handle_skip_comment, pattern=r'^skip_comment$')
+            ],
+            CONFIRM_BOOKING: [
+                CallbackQueryHandler(handle_confirmation, pattern=r'^confirm_and_send$'),
+                CallbackQueryHandler(cancel_booking_callback, pattern=r'^cancel_booking$')
             ],
         },
         fallbacks=[
