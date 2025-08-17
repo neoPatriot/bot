@@ -20,7 +20,7 @@ ROOM_NAMES = {
 }
 
 API_BASE_URL = "https://deadprogrammer.ru/all"
-BOOKING_BASE_URL = "https://бигзэтика.рф/book"
+BOOKING_BASE_URL = "https://xn--80abgqdco6d4e.xn--p1ai/book"
 
 # Главное меню
 MAIN_MENU_KEYBOARD = [
