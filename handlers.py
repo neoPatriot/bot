@@ -624,15 +624,20 @@ async def handle_slots_confirm(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def handle_get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Сохраняет имя и запрашивает номер телефона."""
+    """Saves the name and asks for a phone number, with validation."""
     log_user_action(update, "provided name")
     user_name = update.message.text
-    context.user_data['booking_name'] = user_name
 
-    text = f"Отлично, {user_name}! Теперь, пожалуйста, введите ваш номер телефона."
-    await update.message.reply_text(text)
-
-    return GET_PHONE
+    if len(user_name) > 2:
+        context.user_data['booking_name'] = user_name
+        text = f"Отлично, {user_name}! Теперь, пожалуйста, введите ваш номер телефона."
+        await update.message.reply_text(text)
+        return GET_PHONE
+    else:
+        await update.message.reply_text(
+            "❌ Слишком короткое имя. Пожалуйста, введите имя или название команды (более 2 символов)."
+        )
+        return GET_NAME
 
 
 async def handle_get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
