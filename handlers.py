@@ -861,7 +861,8 @@ def setup_handlers(app):
                 CallbackQueryHandler(handle_booking_room, pattern=r'^book_room_\d+$')
             ],
             BOOKING_DATE: [
-                CallbackQueryHandler(handle_booking_date, pattern=r'^select_\d+_\d+_\d+_?\d*_book$')
+                CallbackQueryHandler(handle_booking_date, pattern=r'^select_\d+_\d+_\d+_?\d*_book$'),
+                CallbackQueryHandler(handle_retry_date, pattern=r'^book_retry_date_\d+$')
             ],
             BOOKING_SLOTS: [
                 CallbackQueryHandler(handle_slot_toggle, pattern=r'^slot_toggle_.+$'),
