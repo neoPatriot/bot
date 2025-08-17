@@ -76,11 +76,13 @@ def submit_booking(room_id, date_str, selected_slots, user_name, phone_number, c
             # Step 2: POST request to submit the booking
             payload = {
                 '_token': csrf_token,
+                'room_id': room_id,
+                'date': date_str,
+                'time': time_str,
                 'name': user_name,
                 'phone': phone_number,
                 'comment': comment,
                 'submit': '',
-                # The server likely gets room, date, and time from the session after the previous GET
             }
 
             logger.info(f"Submitting booking to {submit_url} for room {room_id}")
