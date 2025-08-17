@@ -640,6 +640,13 @@ async def finalize_booking(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text(text=submitting_text)
 
+    # Prepare comment
+    user_comment = context.user_data.get('booking_comment', '')
+    if user_comment and user_comment != "Пропущено":
+        final_comment = f"{user_comment}\n\n(Отправлено из тг бота)"
+    else:
+        final_comment = "(Отправлено из тг бота)"
+
     # Submit the booking
     success, message = submit_booking(
         room_id=context.user_data.get('booking_room_id'),
@@ -647,7 +654,7 @@ async def finalize_booking(update: Update, context: ContextTypes.DEFAULT_TYPE):
         selected_slots=context.user_data.get('selected_slots', []),
         user_name=context.user_data.get('booking_name', 'Не указано'),
         phone_number=context.user_data.get('booking_phone', 'Не указан'),
-        comment=context.user_data.get('booking_comment', 'Нет')
+        comment=final_comment
     )
 
     # Send the final status as a new message
