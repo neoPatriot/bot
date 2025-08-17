@@ -23,8 +23,10 @@ logger = logging.getLogger(__name__)
     BOOKING_ROOM,
     BOOKING_DATE,
     BOOKING_SLOTS,
-    BOOKING_CONFIRM
-) = range(4, 8)
+    GET_NAME,
+    GET_PHONE,
+    GET_COMMENT
+) = range(4, 10)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -571,51 +573,119 @@ async def handle_slot_toggle(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def handle_slots_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Подтверждает выбор слотов и завершает бронирование"""
+    """Подтверждает выбор слотов и запрашивает имя."""
     query = update.callback_query
     await query.answer()
 
-    room_name = context.user_data['booking_room_name']
-    booking_date = context.user_data['booking_date']
-    selected_slots = context.user_data['selected_slots']
+    # Проверяем, что слоты выбраны
+    if not context.user_data.get('selected_slots'):
+        await query.edit_message_text(
+            "⚠️ Вы не выбрали ни одного слота. Пожалуйста, выберите хотя бы один."
+        )
+        # Возвращаемся к выбору слотов, не меняя клавиатуру
+        return BOOKING_SLOTS
 
-    # Форматируем дату для отображения
-    day, month, year = booking_date.split('-')[2], booking_date.split('-')[1], booking_date.split('-')[0]
+    text = "📝 Отлично! Теперь, пожалуйста, введите ваше имя или название команды."
 
-    # Формируем сообщение с выбранными слотами
-    slots_text = "\n".join(
-        [f"• {label}" for value, label in context.user_data['booking_slots']
-         if value in selected_slots]
+    # Отправляем новое сообщение, так как edit_message_text не всегда подходит для смены контекста
+    await query.edit_message_text(text)
+
+    return GET_NAME
+
+
+async def handle_get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Сохраняет имя и запрашивает номер телефона."""
+    user_name = update.message.text
+    context.user_data['booking_name'] = user_name
+
+    text = f"Отлично, {user_name}! Теперь, пожалуйста, введите ваш номер телефона."
+    await update.message.reply_text(text)
+
+    return GET_PHONE
+
+
+async def handle_get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Сохраняет номер телефона и запрашивает комментарий."""
+    phone_number = update.message.text
+    # TODO: Добавить валидацию номера телефона
+    context.user_data['booking_phone'] = phone_number
+
+    text = "Спасибо! Теперь введите комментарий к вашей заявке или нажмите 'Пропустить', если комментариев нет."
+    keyboard = [[InlineKeyboardButton("Пропустить", callback_data="skip_comment")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.message.reply_text(text, reply_markup=reply_markup)
+
+    return GET_COMMENT
+
+
+def clear_booking_data(context: ContextTypes.DEFAULT_TYPE):
+    """Clears all booking-related data from user_data."""
+    keys_to_clear = [
+        'booking_room_id', 'booking_room_name', 'booking_date',
+        'booking_slots', 'selected_slots', 'booking_name',
+        'booking_phone', 'booking_comment', 'selected_room'
+    ]
+    for key in keys_to_clear:
+        context.user_data.pop(key, None)
+
+async def finalize_booking(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Formats and sends the booking summary, then cleans up."""
+    # Extract data from context
+    room_name = context.user_data.get('booking_room_name', 'Не указан')
+    booking_date = context.user_data.get('booking_date', 'Не указана')
+    selected_slots = context.user_data.get('selected_slots', [])
+    user_name = context.user_data.get('booking_name', 'Не указано')
+    phone_number = context.user_data.get('booking_phone', 'Не указан')
+    comment = context.user_data.get('booking_comment', 'Нет')
+
+    # Format the date
+    try:
+        date_obj = datetime.datetime.strptime(booking_date, '%Y-%m-%d')
+        formatted_date = date_obj.strftime('%d.%m.%Y')
+    except (ValueError, TypeError):
+        formatted_date = booking_date
+
+    # Format the slots
+    slots_labels = [label for value, label in context.user_data.get('booking_slots', []) if value in selected_slots]
+    slots_text = "\n".join(f"• {label}" for label in slots_labels)
+    if not slots_text:
+        slots_text = "Слоты не выбраны"
+
+    summary_text = (
+        "✅ *Ваша заявка принята!*\n\n"
+        "Мы скоро свяжемся с вами для подтверждения.\n\n"
+        "--- *Детали заявки* ---\n"
+        f"👤 *Имя:* {user_name}\n"
+        f"📞 *Телефон:* {phone_number}\n"
+        f"🏢 *Зал:* {room_name}\n"
+        f"📅 *Дата:* {formatted_date}\n"
+        f"🕒 *Слоты:*\n{slots_text}\n"
+        f"💬 *Комментарий:* {comment}\n"
+        "--------------------------"
     )
 
-    # Формируем URL для бронирования
-    room_id = context.user_data['booking_room_id']
-    time_str = ",".join(selected_slots)
-    booking_url = f"{BOOKING_BASE_URL}?room={room_id}&date={booking_date}&time={time_str}"
+    # If the last interaction was a button press, we should edit that message
+    if isinstance(update, CallbackQuery):
+        await update.edit_message_text(summary_text, parse_mode="Markdown")
+    else: # if it was a text message, we reply
+        await update.message.reply_text(summary_text, parse_mode="Markdown")
 
-    text = (
-        "🎉 Ваше бронирование готово к оформлению!\n\n"
-        f"🏢 Зал: {room_name}\n"
-        f"📅 Дата: {day}.{month}.{year}\n"
-        f"🕒 Выбранные слоты:\n{slots_text}\n\n"
-        f"Для завершения бронирования перейдите по ссылке:\n"
-        f"👉 [Оформить бронирование]({booking_url})"
-    )
-
-    await query.edit_message_text(
-        text,
-        parse_mode="Markdown",
-        disable_web_page_preview=True
-    )
-
-    # Очищаем данные бронирования
-    context.user_data.pop('booking_room_id', None)
-    context.user_data.pop('booking_room_name', None)
-    context.user_data.pop('booking_date', None)
-    context.user_data.pop('booking_slots', None)
-    context.user_data.pop('selected_slots', None)
-
+    clear_booking_data(context)
     return ConversationHandler.END
+
+async def handle_get_comment(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Saves the comment from text and finalizes the booking."""
+    context.user_data['booking_comment'] = update.message.text
+    return await finalize_booking(update, context)
+
+async def handle_skip_comment(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Saves an empty comment and finalizes the booking."""
+    query = update.callback_query
+    await query.answer()
+    context.user_data['booking_comment'] = "Пропущено"
+    # Pass the query to the finalize function so it can edit the message
+    return await finalize_booking(query, context)
 
 
 async def handle_retry_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -642,12 +712,7 @@ async def handle_retry_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cancel_booking_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /cancel"""
-    # Очищаем данные бронирования
-    keys = ['booking_room_id', 'booking_room_name', 'booking_date', 'booking_slots', 'selected_slots']
-    for key in keys:
-        if key in context.user_data:
-            del context.user_data[key]
-
+    clear_booking_data(context)
     await update.message.reply_text(
         "❌ Бронирование отменено",
         reply_markup=ReplyKeyboardMarkup(
@@ -663,11 +728,7 @@ async def cancel_booking_callback(update: Update, context: ContextTypes.DEFAULT_
     query = update.callback_query
     await query.answer()
 
-    # Очищаем данные бронирования
-    keys = ['booking_room_id', 'booking_room_name', 'booking_date', 'booking_slots', 'selected_slots']
-    for key in keys:
-        if key in context.user_data:
-            del context.user_data[key]
+    clear_booking_data(context)
 
     await query.edit_message_text("❌ Бронирование отменено")
     await show_main_menu(query, context)
@@ -704,6 +765,16 @@ def setup_handlers(app):
                 CallbackQueryHandler(handle_slots_confirm, pattern=r'^slots_confirm$'),
                 CallbackQueryHandler(handle_retry_date, pattern=r'^book_retry_date$'),
                 CallbackQueryHandler(cancel_booking_callback, pattern=r'^cancel_booking$')
+            ],
+            GET_NAME: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_get_name)
+            ],
+            GET_PHONE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_get_phone)
+            ],
+            GET_COMMENT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_get_comment),
+                CallbackQueryHandler(handle_skip_comment, pattern=r'^skip_comment$')
             ],
         },
         fallbacks=[
