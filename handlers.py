@@ -11,6 +11,7 @@ import datetime
 import asyncio
 import logging
 import re
+import json
 from keyboards import generate_room_selection, generate_calendar
 from api_utils import fetch_bookings, extract_times, get_start_time
 from booking_utils import fetch_available_slots, submit_booking
@@ -841,8 +842,18 @@ async def cancel_booking_callback(update: Update, context: ContextTypes.DEFAULT_
 
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Log the error and send a telegram message to notify the developer."""
+    """Log the error and the update that caused it."""
+    # Log the error with traceback
     logger.error("Exception while handling an update:", exc_info=context.error)
+
+    # Also log the update object as a dict for context, if it exists
+    if isinstance(update, Update):
+        try:
+            update_json = json.dumps(update.to_dict(), indent=2, ensure_ascii=False)
+            logger.error(f"Update that caused the error: {update_json}")
+        except Exception as e:
+            logger.error(f"Could not serialize the update object to JSON: {e}")
+            logger.error(f"Update object (str): {str(update)}")
 
 
 def setup_handlers(app):
