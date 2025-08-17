@@ -1,7 +1,7 @@
 from telegram import KeyboardButton
 
 # Конфигурационные константы
-TOKEN = "7641941550:AAHI8Jbp_oWPCUXh92wm1tL9JmbzuaPhigg"  # Замените на ваш токен
+TOKEN = "7973585745:AAFz97T9MoptzcuatQKy3pd1zbd9J-o9f5E"  # Замените на ваш токен
 
 ADMIN_USER_IDS = [1098521522, 1042197487, 1928520826, 810564487]
 ROOM_ADMINS = {
