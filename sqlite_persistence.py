@@ -1,6 +1,8 @@
 import sqlite3
 import json
 import pickle
+import os
+from pathlib import Path
 from telegram.ext import BasePersistence
 from collections import defaultdict
 from typing import Dict, Any, Tuple, Optional, cast
@@ -15,7 +17,11 @@ class SQLitePersistence(BasePersistence):
         self.store_user_data = store_user_data
         self.store_chat_data = store_chat_data
         self.store_bot_data = store_bot_data
-        self.filepath = filepath
+        self.filepath = Path(filepath)
+
+        # Create directory if it doesn't exist
+        self.filepath.parent.mkdir(parents=True, exist_ok=True)
+
         self.conn = sqlite3.connect(self.filepath, check_same_thread=False)
         self._create_tables()
 
