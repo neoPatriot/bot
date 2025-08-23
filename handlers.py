@@ -20,26 +20,6 @@ from config import ROOM_NAMES, ADMIN_USER_IDS, ROOM_ADMINS, API_BASE_URL, MAIN_M
 # Инициализация логгера
 logger = logging.getLogger(__name__)
 
-# Set up a dedicated logger for user actions
-action_logger = logging.getLogger('user_actions')
-action_logger.setLevel(logging.INFO)
-# Create a file handler and set the formatter
-action_file_handler = logging.FileHandler('user_actions.log', encoding='utf-8')
-action_formatter = logging.Formatter('%(asctime)s - %(message)s')
-action_file_handler.setFormatter(action_formatter)
-# Add the handler to the logger
-action_logger.addHandler(action_file_handler)
-action_logger.propagate = False
-
-def log_user_action(update: Update, action: str):
-    """Helper function to log an action with user details."""
-    user = update.effective_user
-    if user:
-        action_logger.info(f"User {user.id} ({user.full_name} / @{user.username}) - Action: {action}")
-    else:
-        # Fallback for updates where user might not be present
-        action_logger.info(f"Unknown user - Action: {action}")
-
 # Состояния для ConversationHandler (бронирование)
 (
     BOOKING_ROOM,
@@ -54,7 +34,6 @@ def log_user_action(update: Update, action: str):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /start"""
-    log_user_action(update, "called /start")
     try:
         await update.message.reply_text(
             "👋 Добро пожаловать в бот бронирования bigZ!\n"
@@ -72,7 +51,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик текстовых сообщений"""
     text = update.message.text.lower()
-    log_user_action(update, f"sent message: '{update.message.text}'")
 
     if text == "просмотр расписания":
         await show_room_selection(update, context, "view")
@@ -116,7 +94,6 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def show_booking_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показывает меню бронирования (выбор зала)"""
-    log_user_action(update, "started booking flow")
     if isinstance(update, CallbackQuery):
         await update.edit_message_text(
             "🏢 Выберите зал для бронирования:",
@@ -479,7 +456,6 @@ async def handle_booking_room(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.answer()
 
     room_id = int(query.data.split("_")[2])
-    log_user_action(update, f"selected room '{ROOM_NAMES.get(room_id, room_id)}' for booking")
     # Сохраняем room_id для последующего использования
     context.user_data['booking_room_id'] = room_id
     context.user_data['booking_room_name'] = ROOM_NAMES.get(room_id, f"Зал {room_id}")
@@ -502,7 +478,6 @@ async def handle_booking_date(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     parts = query.data.split("_")
     year, month, day = int(parts[1]), int(parts[2]), int(parts[3])
-    log_user_action(update, f"selected date {year}-{month:02d}-{day:02d} for booking")
 
     # Сохраняем дату в формате YYYY-MM-DD
     booking_date = f"{year}-{month:02d}-{day:02d}"
@@ -588,8 +563,6 @@ async def handle_slot_toggle(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     slot_value = query.data.split("_", 2)[2]
     selected_slots = context.user_data['selected_slots']
-    action = "selected" if slot_value not in selected_slots else "deselected"
-    log_user_action(update, f"{action} slot {slot_value}")
 
     # Добавляем или удаляем слот
     if slot_value in selected_slots:
@@ -603,37 +576,54 @@ async def handle_slot_toggle(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def handle_slots_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Подтверждает выбор слотов и запрашивает имя."""
+    """
+    Подтверждает выбор слотов.
+    Если данные пользователя уже есть, использует их и переходит к комментарию.
+    В противном случае, запрашивает имя.
+    """
     query = update.callback_query
     await query.answer()
-    log_user_action(update, f"confirmed slots: {context.user_data.get('selected_slots', [])}")
 
     # Проверяем, что слоты выбраны
     if not context.user_data.get('selected_slots'):
         await query.edit_message_text(
             "⚠️ Вы не выбрали ни одного слота. Пожалуйста, выберите хотя бы один."
         )
-        # Возвращаемся к выбору слотов, не меняя клавиатуру
         return BOOKING_SLOTS
 
-    text = "📝 Отлично! Теперь, пожалуйста, введите ваше имя или название команды."
+    # Проверяем, есть ли сохраненные данные пользователя
+    if 'user_name' in context.user_data and 'user_phone' in context.user_data:
+        # Используем сохраненные данные
+        context.user_data['booking_name'] = context.user_data['user_name']
+        context.user_data['booking_phone'] = context.user_data['user_phone']
 
-    # Отправляем новое сообщение, так как edit_message_text не всегда подходит для смены контекста
-    await query.edit_message_text(text)
+        text = "Данные подставлены из вашего предыдущего бронирования. Введите комментарий или нажмите 'Пропустить'."
+        keyboard = [[InlineKeyboardButton("Пропустить", callback_data="skip_comment")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
 
-    return GET_NAME
+        await query.edit_message_text(text, reply_markup=reply_markup)
+        return GET_COMMENT
+    else:
+        # Запрашиваем имя, если данных нет
+        text = "📝 Отлично! Теперь, пожалуйста, введите ваше имя или название команды."
+        await query.edit_message_text(text)
+        return GET_NAME
 
 
 async def handle_get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Saves the name and asks for a phone number, with validation."""
-    log_user_action(update, "provided name")
+    """Saves the name and asks for a phone number, or returns to summary if editing."""
     user_name = update.message.text
 
     if len(user_name) > 2:
         context.user_data['booking_name'] = user_name
-        text = f"Отлично, {user_name}! Теперь, пожалуйста, введите ваш номер телефона."
-        await update.message.reply_text(text)
-        return GET_PHONE
+        # Если мы были в режиме редактирования, возвращаемся к сводке
+        if context.user_data.pop('editing_name', False):
+            await show_confirmation_summary(update, context)
+            return CONFIRM_BOOKING
+        else:
+            text = f"Отлично, {user_name}! Теперь, пожалуйста, введите ваш номер телефона."
+            await update.message.reply_text(text)
+            return GET_PHONE
     else:
         await update.message.reply_text(
             "❌ Слишком короткое имя. Пожалуйста, введите имя или название команды (более 2 символов)."
@@ -642,28 +632,46 @@ async def handle_get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Saves the phone number and asks for a comment, with validation."""
-    log_user_action(update, "provided phone number")
+    """Saves the phone number and asks for a comment, or returns to summary if editing."""
     phone_number = update.message.text
-
-    # Russian phone number regex
     phone_regex = r'^(\+7|7|8)?[\s\-]?\(?[489][0-9]{2}\)?[\s\-]?[0-9]{3}[\s\-]?[0-9]{2}[\s\-]?[0-9]{2}$'
 
     if re.match(phone_regex, phone_number):
         context.user_data['booking_phone'] = phone_number
-
-        text = "Спасибо! Теперь введите комментарий к вашей заявке или нажмите 'Пропустить', если комментариев нет."
-        keyboard = [[InlineKeyboardButton("Пропустить", callback_data="skip_comment")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-
-        await update.message.reply_text(text, reply_markup=reply_markup)
-        return GET_COMMENT
+        # Если мы были в режиме редактирования, возвращаемся к сводке
+        if context.user_data.pop('editing_phone', False):
+            await show_confirmation_summary(update, context)
+            return CONFIRM_BOOKING
+        else:
+            text = "Спасибо! Теперь введите комментарий к вашей заявке или нажмите 'Пропустить', если комментариев нет."
+            keyboard = [[InlineKeyboardButton("Пропустить", callback_data="skip_comment")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_text(text, reply_markup=reply_markup)
+            return GET_COMMENT
     else:
         await update.message.reply_text(
             "❌ Номер телефона введен некорректно. Пожалуйста, попробуйте еще раз. "
             "Пример: +79211234567 или 89211234567."
         )
         return GET_PHONE
+
+
+async def handle_edit_name_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles the request to edit the booking name."""
+    query = update.callback_query
+    await query.answer()
+    context.user_data['editing_name'] = True
+    await query.edit_message_text("📝 Введите новое имя или название команды:")
+    return GET_NAME
+
+
+async def handle_edit_phone_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles the request to edit the booking phone number."""
+    query = update.callback_query
+    await query.answer()
+    context.user_data['editing_phone'] = True
+    await query.edit_message_text("📞 Введите новый номер телефона:")
+    return GET_PHONE
 
 
 async def show_confirmation_summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -707,6 +715,10 @@ async def show_confirmation_summary(update: Update, context: ContextTypes.DEFAUL
     )
 
     keyboard = [
+        [
+            InlineKeyboardButton("📝 Изменить имя", callback_data="edit_booking_name"),
+            InlineKeyboardButton("📞 Изменить телефон", callback_data="edit_booking_phone")
+        ],
         [InlineKeyboardButton("✅ Подтвердить и отправить", callback_data="confirm_and_send")],
         [InlineKeyboardButton("❌ Отменить", callback_data="cancel_booking")]
     ]
@@ -723,7 +735,6 @@ async def show_confirmation_summary(update: Update, context: ContextTypes.DEFAUL
 
 async def handle_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles the final confirmation button press and calls finalize_booking."""
-    log_user_action(update, "confirmed final booking details")
     await update.callback_query.answer()
     # Pass the entire update object to finalize_booking
     return await finalize_booking(update, context)
@@ -773,19 +784,22 @@ async def finalize_booking(update: Update, context: ContextTypes.DEFAULT_TYPE):
     final_message = f"✅ {message}" if success else f"❌ {message}"
     await context.bot.send_message(chat_id=chat_id, text=final_message)
 
+    # Если бронирование успешно, сохраняем данные пользователя
+    if success:
+        context.user_data['user_name'] = context.user_data.get('booking_name')
+        context.user_data['user_phone'] = context.user_data.get('booking_phone')
+
     # Clean up and end
     clear_booking_data(context)
     return ConversationHandler.END
 
 async def handle_get_comment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Saves the comment from text and shows the confirmation summary."""
-    log_user_action(update, "provided comment")
     context.user_data['booking_comment'] = update.message.text
     return await show_confirmation_summary(update, context)
 
 async def handle_skip_comment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Saves an empty comment and shows the confirmation summary."""
-    log_user_action(update, "skipped comment")
     query = update.callback_query
     await query.answer()
     context.user_data['booking_comment'] = "Пропущено"
@@ -816,7 +830,6 @@ async def handle_retry_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cancel_booking_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /cancel"""
-    log_user_action(update, "cancelled booking via /cancel command")
     clear_booking_data(context)
     await update.message.reply_text(
         "❌ Бронирование отменено",
@@ -830,7 +843,6 @@ async def cancel_booking_command(update: Update, context: ContextTypes.DEFAULT_T
 
 async def cancel_booking_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик отмены бронирования через callback"""
-    log_user_action(update, "cancelled booking via button")
     query = update.callback_query
     await query.answer()
 
@@ -894,7 +906,9 @@ def setup_handlers(app):
             ],
             CONFIRM_BOOKING: [
                 CallbackQueryHandler(handle_confirmation, pattern=r'^confirm_and_send$'),
-                CallbackQueryHandler(cancel_booking_callback, pattern=r'^cancel_booking$')
+                CallbackQueryHandler(cancel_booking_callback, pattern=r'^cancel_booking$'),
+                CallbackQueryHandler(handle_edit_name_request, pattern=r'^edit_booking_name$'),
+                CallbackQueryHandler(handle_edit_phone_request, pattern=r'^edit_booking_phone$'),
             ],
         },
         fallbacks=[
