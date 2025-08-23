@@ -33,8 +33,10 @@ logger = logging.getLogger(__name__)
     GET_NAME,
     GET_PHONE,
     GET_COMMENT,
-    CONFIRM_BOOKING
-) = range(4, 11)
+    CONFIRM_BOOKING,
+    ASK_REUSE_NAME,
+    ASK_REUSE_PHONE,
+) = range(4, 13)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -582,101 +584,119 @@ async def handle_slot_toggle(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def handle_slots_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Подтверждает выбор слотов.
-    Если данные пользователя уже есть, использует их и переходит к комментарию.
-    В противном случае, запрашивает имя.
+    Confirms slot selection and starts the process of getting user details.
+    Asks to reuse name if available, otherwise asks for a new name.
     """
     query = update.callback_query
     await query.answer()
 
-    # Проверяем, что слоты выбраны
     if not context.user_data.get('selected_slots'):
         await query.edit_message_text(
             "⚠️ Вы не выбрали ни одного слота. Пожалуйста, выберите хотя бы один."
         )
         return BOOKING_SLOTS
 
-    # Проверяем, есть ли сохраненные данные пользователя
-    if 'user_name' in context.user_data and 'user_phone' in context.user_data:
-        # Используем сохраненные данные
-        context.user_data['booking_name'] = context.user_data['user_name']
-        context.user_data['booking_phone'] = context.user_data['user_phone']
-
-        text = "Данные подставлены из вашего предыдущего бронирования. Введите комментарий или нажмите 'Пропустить'."
-        keyboard = [[InlineKeyboardButton("Пропустить", callback_data="skip_comment")]]
+    if 'user_name' in context.user_data:
+        text = (
+            f"В прошлый раз Вы представились: *{context.user_data['user_name']}*.\n\n"
+            "Чтобы использовать это имя, нажмите 'Пропустить'. Чтобы изменить, просто введите новое."
+        )
+        keyboard = [[InlineKeyboardButton("Пропустить", callback_data="reuse_name")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
-
-        await query.edit_message_text(text, reply_markup=reply_markup)
-        return GET_COMMENT
+        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+        return ASK_REUSE_NAME
     else:
-        # Запрашиваем имя, если данных нет
         text = "📝 Отлично! Теперь, пожалуйста, введите ваше имя или название команды."
         await query.edit_message_text(text)
         return GET_NAME
 
 
+async def _ask_for_phone_or_reuse(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Asks to reuse phone if available, otherwise asks for a new one."""
+    if 'user_phone' in context.user_data:
+        text = (
+            f"В прошлый раз Вы указывали телефон: *{context.user_data['user_phone']}*.\n\n"
+            "Чтобы использовать этот номер, нажмите 'Пропустить'. Чтобы изменить, просто введите новый."
+        )
+        keyboard = [[InlineKeyboardButton("Пропустить", callback_data="reuse_phone")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        # Need to handle both Message and CallbackQuery updates
+        if update.callback_query:
+            await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+        else:
+            await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+        return ASK_REUSE_PHONE
+    else:
+        text = "Теперь, пожалуйста, введите ваш номер телефона."
+        if update.callback_query:
+            await update.callback_query.edit_message_text(text)
+        else:
+            await update.message.reply_text(text)
+        return GET_PHONE
+
+async def handle_reuse_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles the user choosing to reuse their saved name."""
+    query = update.callback_query
+    await query.answer()
+    context.user_data['booking_name'] = context.user_data['user_name']
+    return await _ask_for_phone_or_reuse(update, context)
+
 async def handle_get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Saves the name and asks for a phone number, or returns to summary if editing."""
+    """Saves the name and proceeds to ask for the phone number."""
     user_name = update.message.text
 
     if len(user_name) > 2:
         context.user_data['booking_name'] = user_name
-        # Если мы были в режиме редактирования, возвращаемся к сводке
-        if context.user_data.pop('editing_name', False):
-            await show_confirmation_summary(update, context)
-            return CONFIRM_BOOKING
-        else:
-            text = f"Отлично, {user_name}! Теперь, пожалуйста, введите ваш номер телефона."
-            await update.message.reply_text(text)
-            return GET_PHONE
+        # This function is now used for both initial name entry and reuse flow
+        # It always proceeds to the phone check logic.
+        return await _ask_for_phone_or_reuse(update, context)
     else:
         await update.message.reply_text(
             "❌ Слишком короткое имя. Пожалуйста, введите имя или название команды (более 2 символов)."
         )
-        return GET_NAME
+        # Stay in the same state to re-ask
+        if 'user_name' in context.user_data:
+            return ASK_REUSE_NAME
+        else:
+            return GET_NAME
 
+
+async def handle_reuse_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles the user choosing to reuse their saved phone number."""
+    query = update.callback_query
+    await query.answer()
+    context.user_data['booking_phone'] = context.user_data['user_phone']
+
+    text = "Спасибо! Теперь введите комментарий к вашей заявке или нажмите 'Пропустить', если комментариев нет."
+    keyboard = [[InlineKeyboardButton("Пропустить", callback_data="skip_comment")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await query.edit_message_text(text, reply_markup=reply_markup)
+    return GET_COMMENT
 
 async def handle_get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Saves the phone number and asks for a comment, or returns to summary if editing."""
+    """Saves the phone number and asks for a comment."""
     phone_number = update.message.text
     phone_regex = r'^(\+7|7|8)?[\s\-]?\(?[489][0-9]{2}\)?[\s\-]?[0-9]{3}[\s\-]?[0-9]{2}[\s\-]?[0-9]{2}$'
 
     if re.match(phone_regex, phone_number):
         context.user_data['booking_phone'] = phone_number
-        # Если мы были в режиме редактирования, возвращаемся к сводке
-        if context.user_data.pop('editing_phone', False):
-            await show_confirmation_summary(update, context)
-            return CONFIRM_BOOKING
-        else:
-            text = "Спасибо! Теперь введите комментарий к вашей заявке или нажмите 'Пропустить', если комментариев нет."
-            keyboard = [[InlineKeyboardButton("Пропустить", callback_data="skip_comment")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await update.message.reply_text(text, reply_markup=reply_markup)
-            return GET_COMMENT
+        text = "Спасибо! Теперь введите комментарий к вашей заявке или нажмите 'Пропустить', если комментариев нет."
+        keyboard = [[InlineKeyboardButton("Пропустить", callback_data="skip_comment")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(text, reply_markup=reply_markup)
+        return GET_COMMENT
     else:
         await update.message.reply_text(
             "❌ Номер телефона введен некорректно. Пожалуйста, попробуйте еще раз. "
             "Пример: +79211234567 или 89211234567."
         )
-        return GET_PHONE
-
-
-async def handle_edit_name_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handles the request to edit the booking name."""
-    query = update.callback_query
-    await query.answer()
-    context.user_data['editing_name'] = True
-    await query.edit_message_text("📝 Введите новое имя или название команды:")
-    return GET_NAME
-
-
-async def handle_edit_phone_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handles the request to edit the booking phone number."""
-    query = update.callback_query
-    await query.answer()
-    context.user_data['editing_phone'] = True
-    await query.edit_message_text("📞 Введите новый номер телефона:")
-    return GET_PHONE
+        # Stay in the same state to re-ask
+        if 'user_phone' in context.user_data:
+            return ASK_REUSE_PHONE
+        else:
+            return GET_PHONE
 
 
 async def show_confirmation_summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -720,10 +740,6 @@ async def show_confirmation_summary(update: Update, context: ContextTypes.DEFAUL
     )
 
     keyboard = [
-        [
-            InlineKeyboardButton("📝 Изменить имя", callback_data="edit_booking_name"),
-            InlineKeyboardButton("📞 Изменить телефон", callback_data="edit_booking_phone")
-        ],
         [InlineKeyboardButton("✅ Подтвердить и отправить", callback_data="confirm_and_send")],
         [InlineKeyboardButton("❌ Отменить", callback_data="cancel_booking")]
     ]
@@ -903,7 +919,15 @@ def setup_handlers(app):
             GET_NAME: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_get_name)
             ],
+            ASK_REUSE_NAME: [
+                CallbackQueryHandler(handle_reuse_name, pattern=r'^reuse_name$'),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_get_name)
+            ],
             GET_PHONE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_get_phone)
+            ],
+            ASK_REUSE_PHONE: [
+                CallbackQueryHandler(handle_reuse_phone, pattern=r'^reuse_phone$'),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_get_phone)
             ],
             GET_COMMENT: [
@@ -911,9 +935,7 @@ def setup_handlers(app):
             ],
             CONFIRM_BOOKING: [
                 CallbackQueryHandler(handle_confirmation, pattern=r'^confirm_and_send$'),
-                CallbackQueryHandler(cancel_booking_callback, pattern=r'^cancel_booking$'),
-                CallbackQueryHandler(handle_edit_name_request, pattern=r'^edit_booking_name$'),
-                CallbackQueryHandler(handle_edit_phone_request, pattern=r'^edit_booking_phone$'),
+                CallbackQueryHandler(cancel_booking_callback, pattern=r'^cancel_booking$')
             ],
         },
         fallbacks=[
