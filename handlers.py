@@ -1,4 +1,6 @@
 from telegram import Update, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
+from telegram.warnings import PTBUserWarning
+import warnings
 from telegram.ext import (
     CommandHandler,
     CallbackQueryHandler,
@@ -10,6 +12,9 @@ from telegram.ext import (
 import datetime
 import asyncio
 import logging
+
+# Filter the specific warning
+warnings.filterwarnings(action="ignore", message=r".*CallbackQueryHandler", category=PTBUserWarning)
 import re
 import json
 from keyboards import generate_room_selection, generate_calendar
