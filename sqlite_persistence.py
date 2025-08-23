@@ -45,6 +45,13 @@ class SQLitePersistence(BasePersistence):
                 PRIMARY KEY (name, conv_key)
             )
         ''')
+        # A table for callback_data, storing it as a pickled blob
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS callback_data (
+                key TEXT PRIMARY KEY DEFAULT 'callback_data',
+                data BLOB NOT NULL
+            )
+        ''')
         self.conn.commit()
 
     async def get_user_data(self) -> Dict[int, Dict[Any, Any]]:
@@ -62,6 +69,11 @@ class SQLitePersistence(BasePersistence):
         cursor.execute("INSERT OR REPLACE INTO user_data (user_id, data) VALUES (?, ?)", (user_id, json_data))
         self.conn.commit()
 
+    async def drop_user_data(self, user_id: int) -> None:
+        cursor = self.conn.cursor()
+        cursor.execute("DELETE FROM user_data WHERE user_id = ?", (user_id,))
+        self.conn.commit()
+
     async def get_chat_data(self) -> Dict[int, Dict[Any, Any]]:
         cursor = self.conn.cursor()
         cursor.execute("SELECT chat_id, data FROM chat_data")
@@ -75,6 +87,11 @@ class SQLitePersistence(BasePersistence):
         cursor = self.conn.cursor()
         json_data = json.dumps(data)
         cursor.execute("INSERT OR REPLACE INTO chat_data (chat_id, data) VALUES (?, ?)", (chat_id, json_data))
+        self.conn.commit()
+
+    async def drop_chat_data(self, chat_id: int) -> None:
+        cursor = self.conn.cursor()
+        cursor.execute("DELETE FROM chat_data WHERE chat_id = ?", (chat_id,))
         self.conn.commit()
 
     async def get_bot_data(self) -> Dict[Any, Any]:
@@ -114,6 +131,29 @@ class SQLitePersistence(BasePersistence):
             state_blob = pickle.dumps(new_state)
             cursor.execute("INSERT OR REPLACE INTO conversations (name, conv_key, state) VALUES (?, ?, ?)", (name, conv_key_str, state_blob))
         self.conn.commit()
+
+    async def get_callback_data(self) -> Optional[Any]:
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT data FROM callback_data WHERE key = 'callback_data'")
+        row = cursor.fetchone()
+        if row:
+            return pickle.loads(row[0])
+        return None
+
+    async def update_callback_data(self, data: Any) -> None:
+        cursor = self.conn.cursor()
+        pickled_data = pickle.dumps(data)
+        cursor.execute("INSERT OR REPLACE INTO callback_data (key, data) VALUES ('callback_data', ?)", (pickled_data,))
+        self.conn.commit()
+
+    async def refresh_bot_data(self, bot_data: Dict) -> None:
+        pass
+
+    async def refresh_chat_data(self, chat_id: int, chat_data: Dict) -> None:
+        pass
+
+    async def refresh_user_data(self, user_id: int, user_data: Dict) -> None:
+        pass
 
     async def flush(self) -> None:
         if self.conn:
