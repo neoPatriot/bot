@@ -11,7 +11,10 @@ class SQLitePersistence(BasePersistence):
     """
 
     def __init__(self, filepath: str, store_user_data: bool = True, store_chat_data: bool = True, store_bot_data: bool = True):
-        super().__init__(store_user_data=store_user_data, store_chat_data=store_chat_data, store_bot_data=store_bot_data)
+        super().__init__()
+        self.store_user_data = store_user_data
+        self.store_chat_data = store_chat_data
+        self.store_bot_data = store_bot_data
         self.filepath = filepath
         self.conn = sqlite3.connect(self.filepath, check_same_thread=False)
         self._create_tables()
@@ -55,6 +58,8 @@ class SQLitePersistence(BasePersistence):
         self.conn.commit()
 
     async def get_user_data(self) -> Dict[int, Dict[Any, Any]]:
+        if not self.store_user_data:
+            return defaultdict(dict)
         cursor = self.conn.cursor()
         cursor.execute("SELECT user_id, data FROM user_data")
         rows = cursor.fetchall()
@@ -64,17 +69,23 @@ class SQLitePersistence(BasePersistence):
         return user_data
 
     async def update_user_data(self, user_id: int, data: Dict) -> None:
+        if not self.store_user_data:
+            return
         cursor = self.conn.cursor()
         json_data = json.dumps(data)
         cursor.execute("INSERT OR REPLACE INTO user_data (user_id, data) VALUES (?, ?)", (user_id, json_data))
         self.conn.commit()
 
     async def drop_user_data(self, user_id: int) -> None:
+        if not self.store_user_data:
+            return
         cursor = self.conn.cursor()
         cursor.execute("DELETE FROM user_data WHERE user_id = ?", (user_id,))
         self.conn.commit()
 
     async def get_chat_data(self) -> Dict[int, Dict[Any, Any]]:
+        if not self.store_chat_data:
+            return defaultdict(dict)
         cursor = self.conn.cursor()
         cursor.execute("SELECT chat_id, data FROM chat_data")
         rows = cursor.fetchall()
@@ -84,17 +95,23 @@ class SQLitePersistence(BasePersistence):
         return chat_data
 
     async def update_chat_data(self, chat_id: int, data: Dict) -> None:
+        if not self.store_chat_data:
+            return
         cursor = self.conn.cursor()
         json_data = json.dumps(data)
         cursor.execute("INSERT OR REPLACE INTO chat_data (chat_id, data) VALUES (?, ?)", (chat_id, json_data))
         self.conn.commit()
 
     async def drop_chat_data(self, chat_id: int) -> None:
+        if not self.store_chat_data:
+            return
         cursor = self.conn.cursor()
         cursor.execute("DELETE FROM chat_data WHERE chat_id = ?", (chat_id,))
         self.conn.commit()
 
     async def get_bot_data(self) -> Dict[Any, Any]:
+        if not self.store_bot_data:
+            return {}
         cursor = self.conn.cursor()
         cursor.execute("SELECT data FROM bot_data WHERE key = 'bot_data'")
         row = cursor.fetchone()
@@ -103,6 +120,8 @@ class SQLitePersistence(BasePersistence):
         return {}
 
     async def update_bot_data(self, data: Dict) -> None:
+        if not self.store_bot_data:
+            return
         cursor = self.conn.cursor()
         json_data = json.dumps(data)
         cursor.execute("INSERT OR REPLACE INTO bot_data (key, data) VALUES ('bot_data', ?)", (json_data,))
@@ -141,6 +160,8 @@ class SQLitePersistence(BasePersistence):
         return None
 
     async def update_callback_data(self, data: Any) -> None:
+        if data is None:
+            return
         cursor = self.conn.cursor()
         pickled_data = pickle.dumps(data)
         cursor.execute("INSERT OR REPLACE INTO callback_data (key, data) VALUES ('callback_data', ?)", (pickled_data,))
