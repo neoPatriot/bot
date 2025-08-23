@@ -1,4 +1,4 @@
-from telegram.ext import Application
+from telegram.ext import Application, PicklePersistence
 import logging
 from handlers import setup_handlers
 from config import TOKEN
@@ -16,7 +16,12 @@ logger = logging.getLogger(__name__)
 def main():
     """Запуск бота"""
     try:
-        app = Application.builder().token(TOKEN).build()
+        # Создаем объект persistence
+        persistence = PicklePersistence(filepath="data/bot_persistence.pickle")
+
+        # Создаем приложение с persistence
+        app = Application.builder().token(TOKEN).persistence(persistence).build()
+
         setup_handlers(app)
         logger.info("Бот запущен и ожидает сообщений...")
         app.run_polling(drop_pending_updates=True)
