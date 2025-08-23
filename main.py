@@ -1,7 +1,8 @@
-from telegram.ext import Application, PicklePersistence
+from telegram.ext import Application
 import logging
 from handlers import setup_handlers
 from config import TOKEN
+from sqlite_persistence import SQLitePersistence
 
 # Настройка логов
 logging.basicConfig(
@@ -17,7 +18,7 @@ def main():
     """Запуск бота"""
     try:
         # Создаем объект persistence
-        persistence = PicklePersistence(filepath="data/bot_persistence.pickle")
+        persistence = SQLitePersistence(filepath="data/bot.db")
 
         # Создаем приложение с persistence
         app = Application.builder().token(TOKEN).persistence(persistence).build()
